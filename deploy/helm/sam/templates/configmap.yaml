@@ -5,12 +5,14 @@ metadata:
   labels:
     {{- include "sam.labels" . | nindent 4 }}
 data:
-  DB_HOST: {{ .Values.database.host | quote }}
-  DB_PORT: {{ .Values.database.port | quote }}
+  DB_HOST: {{ if .Values.postgresql.enabled }}{{ printf "%s-postgresql" (include "sam.fullname" .) | quote }}{{ else }}{{ .Values.database.host | quote }}{{ end }}
+  DB_PORT: {{ if .Values.postgresql.enabled }}"5432"{{ else }}{{ .Values.database.port | quote }}{{ end }}
+  {{- if not .Values.postgresql.enabled }}
   DB_USER: {{ .Values.database.user | quote }}
-  DB_SSLMODE: {{ .Values.database.sslMode | quote }}
-  REDIS_HOST: {{ .Values.redis.host | quote }}
-  REDIS_PORT: {{ .Values.redis.port | quote }}
+  {{- end }}
+  DB_SSLMODE: {{ if .Values.postgresql.enabled }}"disable"{{ else }}{{ .Values.database.sslMode | quote }}{{ end }}
+  REDIS_HOST: {{ if .Values.redis.enabled }}{{ printf "%s-redis" (include "sam.fullname" .) | quote }}{{ else }}{{ .Values.redis.host | quote }}{{ end }}
+  REDIS_PORT: {{ if .Values.redis.enabled }}"6379"{{ else }}{{ .Values.redis.port | quote }}{{ end }}
   {{- range $key, $value := .Values.config.extra }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}

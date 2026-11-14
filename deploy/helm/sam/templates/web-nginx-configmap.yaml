@@ -1,0 +1,49 @@
+{{- if .Values.services.web.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" . }}-web-nginx
+  labels:
+    {{- include "sam.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen {{ .Values.services.web.port }};
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location = /healthz {
+            default_type application/json;
+            return 200 '{"status":"ok"}';
+        }
+
+        location = /api {
+            return 404;
+        }
+
+        location /api/ {
+            {{- if .Values.services.api.enabled }}
+            proxy_pass http://{{ include "sam.fullname" . }}-api:{{ .Values.services.api.port }}/;
+            {{- else }}
+            return 503;
+            {{- end }}
+        }
+
+        location = /ingest {
+            return 404;
+        }
+
+        location /ingest/ {
+            {{- if .Values.services.ingest.enabled }}
+            proxy_pass http://{{ include "sam.fullname" . }}-ingest:{{ .Values.services.ingest.port }}/;
+            {{- else }}
+            return 503;
+            {{- end }}
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+{{- end }}

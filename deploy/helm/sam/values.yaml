@@ -1,4 +1,4 @@
-# External PostgreSQL and Redis are required; this chart does not provision either.
+# External PostgreSQL and Redis are used unless the built-in services are enabled.
 nameOverride: ""
 fullnameOverride: ""
 
@@ -43,9 +43,20 @@ database:
   port: 5432
   user: sam
   sslMode: require
+postgresql:
+  enabled: false
+  image: pgvector/pgvector:pg16
+  persistence:
+    size: 8Gi
+    storageClass: ""
 redis:
+  enabled: false
+  image: redis:7.2
   host: redis.example.svc
   port: 6379
+  persistence:
+    size: 4Gi
+    storageClass: ""
 
 config:
   extra: {}

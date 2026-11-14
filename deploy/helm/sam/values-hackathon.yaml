@@ -1,0 +1,10 @@
+# Embedded stateful services are single-node conveniences, not backups.
+postgresql:
+  enabled: true
+redis:
+  enabled: true
+services:
+  worker:
+    enabled: false
+migrations:
+  enabled: false

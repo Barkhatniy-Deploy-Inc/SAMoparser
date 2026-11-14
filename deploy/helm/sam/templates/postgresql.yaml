@@ -1,0 +1,90 @@
+{{- if .Values.postgresql.enabled }}
+{{- $name := printf "%s-postgresql" (include "sam.fullname" .) }}
+{{- $secret := required "existingSecret must name a pre-created Secret" .Values.existingSecret }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-init
+data:
+  01-vector.sql: |
+    CREATE EXTENSION IF NOT EXISTS vector;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "sam.selectorLabels" (dict "root" . "component" "postgresql") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      {{- include "sam.selectorLabels" (dict "root" . "component" "postgresql") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sam.selectorLabels" (dict "root" . "component" "postgresql") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgresql
+          image: {{ .Values.postgresql.image | quote }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            {{- range $key := list "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret | quote }}
+                  key: {{ $key }}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  export PGPASSWORD="$POSTGRES_PASSWORD" PGCONNECT_TIMEOUT=3
+                  result=$(psql -X -w -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_extension WHERE extname = 'vector'") || exit 1
+                  [ "$result" = 1 ]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: init
+          configMap:
+            name: {{ $name }}-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgresql.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
+{{- end }}

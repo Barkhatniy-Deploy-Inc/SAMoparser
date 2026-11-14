@@ -28,6 +28,13 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- define "sam.secretEnv" -}}
 {{- $secret := required "existingSecret must name a pre-created Secret" .Values.existingSecret -}}
+{{- if .Values.postgresql.enabled }}
+- name: DB_USER
+  valueFrom:
+    secretKeyRef:
+      name: {{ $secret | quote }}
+      key: POSTGRES_USER
+{{- end }}
 {{- range $env, $key := .Values.secretKeys }}
 - name: {{ $env }}
   valueFrom:
