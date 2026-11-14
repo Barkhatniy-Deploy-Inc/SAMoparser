@@ -24,6 +24,18 @@ class SoftwareProduct(Base):
     installations: Mapped[list[Installation]] = relationship(back_populates="software")
 
 
+class Device(Base):
+    __tablename__ = "devices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    computer_id: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(200), default="")
+    department: Mapped[str] = mapped_column(String(200), default="")
+    user_name: Mapped[str] = mapped_column(String(200), default="")
+    operating_system: Mapped[str] = mapped_column(String(100), default="")
+    installations: Mapped[list[Installation]] = relationship(back_populates="device")
+
+
 class Installation(Base):
     __tablename__ = "installations"
 
@@ -36,9 +48,11 @@ class Installation(Base):
     match_status: Mapped[str] = mapped_column(String(30), default="unknown", index=True)
     match_score: Mapped[float] = mapped_column(Float, default=0.0)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    software_id: Mapped[int | None] = mapped_column(ForeignKey("software_products.id", ondelete="SET NULL"), nullable=True)
+    software_id: Mapped[int | None] = mapped_column(ForeignKey("software_products.id", ondelete="SET NULL"), nullable=True, index=True)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True, nullable=True)
 
     software: Mapped[SoftwareProduct | None] = relationship(back_populates="installations")
+    device: Mapped[Device] = relationship(back_populates="installations")
 
 
 class RiskEvent(Base):

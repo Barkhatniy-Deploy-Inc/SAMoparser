@@ -15,8 +15,11 @@ logs:
 build:
 	docker compose build
 
-migrate seed:
-	@echo 'Not implemented: see docs/implementation-plan.md' && exit 1
+migrate:
+	docker compose run --rm migrate
+
+seed:
+	docker compose run --rm --no-deps -v "$(PWD)/docs:/app/docs:ro" -v "$(PWD)/scripts:/app/scripts:ro" api python /app/scripts/seed_case.py
 
 test:
 	python3 -m pytest tests

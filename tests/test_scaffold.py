@@ -46,19 +46,49 @@ def test_web_and_agent_templates_exist():
 
 
 def test_minimal_sam_flow_matches_alias_and_reports_unknown():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
     from services.backend.app import api
-    from services.backend.app.api import CatalogSoftware, Installation, dashboard_summary
+    from services.backend.app.db import Base
+    from services.backend.app.api import CatalogSoftware, DeviceInput, Installation
 
-    api.catalog.clear()
-    api.installations.clear()
-    api.add_catalog_item(CatalogSoftware(name="Google Chrome", publisher="Google LLC"))
-    api.add_catalog_item(CatalogSoftware(name="WinRAR", policy_status="prohibited"))
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        api.add_catalog_item(CatalogSoftware(name="Google Chrome", publisher="Google LLC"), db)
+        api.add_catalog_item(CatalogSoftware(name="WinRAR", policy_status="prohibited"), db)
+        api.add_device(DeviceInput(computer_id="pc-1"), db)
+        api.add_device(DeviceInput(computer_id="pc-2"), db)
+        api.add_device(DeviceInput(computer_id="pc-3"), db)
+        api.add_installation(Installation(computer_id="pc-1", name="chrome.exe"), db)
+        api.add_installation(Installation(computer_id="pc-2", name="unknown-tool.exe"), db)
+        api.add_installation(Installation(computer_id="pc-3", name="WinRAR"), db)
+        summary = api.dashboard_summary(db)
 
-    api.add_installation(Installation(computer_id="pc-1", name="chrome.exe"))
-    api.add_installation(Installation(computer_id="pc-2", name="unknown-tool.exe"))
-    api.add_installation(Installation(computer_id="pc-3", name="WinRAR"))
-
-    summary = dashboard_summary()
     assert summary["matched"] == 2
     assert summary["unknown"] == 1
     assert summary["critical_risks"] == 1
+
+
+def test_delete_endpoints_remove_records_and_unmatch_catalog_software():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from services.backend.app import api
+    from services.backend.app.api import CatalogSoftware, DeviceInput, Installation
+    from services.backend.app.db import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        api.add_device(DeviceInput(computer_id="pc-delete"), db)
+        api.add_catalog_item(CatalogSoftware(name="Test Tool"), db)
+        created = api.add_installation(Installation(computer_id="pc-delete", name="Test Tool"), db)
+        installation_id = db.query(api.InstallationRow).first().id
+
+        api.delete_catalog_item("Test Tool", db)
+        assert api.get_installations(db=db)[0]["match_status"] == "unknown"
+        api.delete_installation(installation_id, db)
+        api.delete_device("pc-delete", db)
+        assert api.get_installations(db=db) == []

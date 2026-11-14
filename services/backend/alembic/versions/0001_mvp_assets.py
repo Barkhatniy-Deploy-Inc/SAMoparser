@@ -40,6 +40,7 @@ def upgrade() -> None:
     op.create_index("ix_installations_computer_id", "installations", ["computer_id"])
     op.create_index("ix_installations_canonical_name", "installations", ["canonical_name"])
     op.create_index("ix_installations_match_status", "installations", ["match_status"])
+    op.create_index("ix_installations_software_id", "installations", ["software_id"])
     op.create_table(
         "risk_events",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -56,6 +57,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("risk_events")
+    op.drop_index("ix_installations_software_id", table_name="installations")
     op.drop_table("installations")
     op.drop_index("ix_software_products_name", table_name="software_products")
     op.drop_index("ix_software_products_normalized_name", table_name="software_products")
