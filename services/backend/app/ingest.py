@@ -9,13 +9,13 @@ app = FastAPI(
 )
 
 
-@app.get("/healthz")
-def healthz() -> dict[str, str]:
+@app.get("/health")
+def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/readyz")
-def readyz() -> dict[str, str]:
+@app.get("/ready")
+def ready() -> dict[str, str]:
     return {"status": "ok"}
 
 

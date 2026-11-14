@@ -97,13 +97,13 @@ def risk_for(item: InstallationRow, used: int, products_by_id: dict[int, Softwar
     return None
 
 
-@app.get("/healthz", summary="Проверка работоспособности сервиса", tags=["Служебные"])
-def healthz() -> dict[str, str]:
+@app.get("/health", summary="Проверка работоспособности сервиса", tags=["Служебные"])
+def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/readyz", summary="Проверка готовности сервиса и базы данных", tags=["Служебные"])
-def readyz(db: Session = Depends(get_db)) -> dict[str, str]:
+@app.get("/ready", summary="Проверка готовности сервиса и базы данных", tags=["Служебные"])
+def ready(db: Session = Depends(get_db)) -> dict[str, str]:
     db.execute(text("SELECT 1"))
     return {"status": "ok"}
 

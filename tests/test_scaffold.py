@@ -10,7 +10,7 @@ def test_backend_entrypoints_expose_health_readiness_and_metrics():
 
     for application in (api_app, ingest_app):
         paths = {route.path for route in application.routes}
-        assert {"/healthz", "/readyz", "/metrics"} <= paths
+        assert {"/health", "/ready", "/metrics"} <= paths
 
 
 def test_backend_has_shared_image_and_pinned_dependencies():

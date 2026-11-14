@@ -39,8 +39,8 @@ flowchart LR
 ```bash
 ./scripts/dev.sh env
 ./scripts/dev.sh up
-curl http://localhost:8000/healthz
-curl http://localhost:8001/readyz
+curl http://localhost:8000/health
+curl http://localhost:8001/ready
 open http://localhost:8080
 ```
 
