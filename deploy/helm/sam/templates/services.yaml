@@ -1,0 +1,21 @@
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+{{- if and $svc.enabled (ne $name "worker") }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sam.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "sam.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sam.selectorLabels" (dict "root" $root "component" $name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: http
+{{- end }}
+{{- end }}

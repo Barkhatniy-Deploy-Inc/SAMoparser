@@ -1,0 +1,42 @@
+global:
+  backendImage:
+    repository: ghcr.io/example/sam-backend
+    tag: stable
+  webImage:
+    repository: ghcr.io/example/sam-web
+    tag: stable
+
+serviceAccount:
+  create: true
+
+services:
+  api:
+    replicaCount: 3
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 1, memory: 512Mi}
+  ingest:
+    replicaCount: 2
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 1, memory: 512Mi}
+  worker:
+    replicaCount: 2
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 1, memory: 512Mi}
+  web:
+    replicaCount: 3
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+
+ingress:
+  enabled: true
+  host: sam.example.com
+  certManager:
+    enabled: true
+    clusterIssuer: letsencrypt-prod
+  tls:
+    - secretName: sam-tls
+      hosts: [sam.example.com]

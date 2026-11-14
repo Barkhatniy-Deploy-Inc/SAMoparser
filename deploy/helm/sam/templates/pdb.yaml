@@ -1,0 +1,17 @@
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+{{- if and $svc.enabled $svc.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "sam.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "sam.labels" $root | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sam.selectorLabels" (dict "root" $root "component" $name) | nindent 6 }}
+  minAvailable: {{ $svc.pdb.minAvailable }}
+{{- end }}
+{{- end }}

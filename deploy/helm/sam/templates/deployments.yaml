@@ -1,0 +1,65 @@
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sam.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "sam.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  {{- if not $svc.autoscaling.enabled }}
+  replicas: {{ $svc.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "sam.selectorLabels" (dict "root" $root "component" $name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sam.selectorLabels" (dict "root" $root "component" $name) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "sam.serviceAccountName" $root }}
+      automountServiceAccountToken: false
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ $name }}
+          {{- $image := $root.Values.global.backendImage }}
+          {{- if eq $name "web" }}{{ $image = $root.Values.global.webImage }}{{ end }}
+          image: {{ printf "%s:%s" $image.repository ($image.tag | toString) | quote }}
+          imagePullPolicy: {{ $image.pullPolicy }}
+          {{- with $svc.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if ne $name "worker" }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: {{ if eq $name "web" }}/healthz{{ else }}/readyz{{ end }}
+              port: http
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "sam.fullname" $root }}-config
+          env:
+            {{- include "sam.secretEnv" $root | nindent 12 }}
+          securityContext:
+            {{- toYaml $root.Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+{{- end }}
+{{- end }}

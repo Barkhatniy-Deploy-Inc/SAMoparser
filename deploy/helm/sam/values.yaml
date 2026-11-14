@@ -1,0 +1,132 @@
+# External PostgreSQL and Redis are required; this chart does not provision either.
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+# Every application container uses the image for its role below.
+global:
+  backendImage:
+    repository: ghcr.io/example/sam-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  webImage:
+    repository: ghcr.io/example/sam-web
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# Name of a pre-created Secret. No Secret is created by this chart.
+existingSecret: ""
+secretKeys:
+  DATABASE_URL: DATABASE_URL
+  REDIS_URL: REDIS_URL
+  JWT_SECRET: JWT_SECRET
+  AGENT_API_KEY: AGENT_API_KEY
+  OPENAI_API_KEY: OPENAI_API_KEY
+
+# Non-secret database settings are exposed through the application ConfigMap.
+database:
+  host: postgres.example.svc
+  port: 5432
+  user: sam
+  sslMode: require
+redis:
+  host: redis.example.svc
+  port: 6379
+
+config:
+  extra: {}
+
+services:
+  api:
+    enabled: true
+    replicaCount: 1
+    port: 8000
+    command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    resources: {}
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: false
+      minAvailable: 1
+  ingest:
+    enabled: true
+    replicaCount: 1
+    port: 8001
+    command: ["uvicorn", "app.ingest:app", "--host", "0.0.0.0", "--port", "8001"]
+    resources: {}
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: false
+      minAvailable: 1
+  worker:
+    enabled: true
+    replicaCount: 1
+    command: ["celery", "-A", "app.worker", "worker", "-l", "info"]
+    resources: {}
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: false
+      minAvailable: 1
+  web:
+    enabled: true
+    replicaCount: 1
+    port: 8080
+    command: []
+    resources: {}
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: false
+      minAvailable: 1
+
+# Optional Prometheus Operator ServiceMonitor.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /metrics
+  labels: {}
+
+# Ingress routes /api, /ingest, and / to the corresponding services.
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  host: ""
+  tls: []
+  certManager:
+    enabled: false
+    clusterIssuer: ""
+
+# Disabled by default: the scaffold has no migration implementation yet.
+migrations:
+  enabled: false
+  command: []
+  resources: {}
