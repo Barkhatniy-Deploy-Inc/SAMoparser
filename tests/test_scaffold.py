@@ -43,3 +43,22 @@ def test_web_and_agent_templates_exist():
     assert "proxy_pass http://ingest:8001" in (web / "nginx.conf").read_text()
     assert (agent / "example.py").exists()
     assert (agent / "Dockerfile").exists()
+
+
+def test_minimal_sam_flow_matches_alias_and_reports_unknown():
+    from services.backend.app import api
+    from services.backend.app.api import CatalogSoftware, Installation, dashboard_summary
+
+    api.catalog.clear()
+    api.installations.clear()
+    api.add_catalog_item(CatalogSoftware(name="Google Chrome", publisher="Google LLC"))
+    api.add_catalog_item(CatalogSoftware(name="WinRAR", policy_status="prohibited"))
+
+    api.add_installation(Installation(computer_id="pc-1", name="chrome.exe"))
+    api.add_installation(Installation(computer_id="pc-2", name="unknown-tool.exe"))
+    api.add_installation(Installation(computer_id="pc-3", name="WinRAR"))
+
+    summary = dashboard_summary()
+    assert summary["matched"] == 2
+    assert summary["unknown"] == 1
+    assert summary["critical_risks"] == 1
