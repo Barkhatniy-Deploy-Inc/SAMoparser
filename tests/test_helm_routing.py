@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-
 CHART = Path(__file__).resolve().parents[1] / "deploy/helm/sam"
 
 
@@ -51,7 +50,7 @@ def test_ingress_requires_web_service():
     result = subprocess.run(
         ["helm", "template", "demo", str(CHART), "--set", "existingSecret=test-secret",
          "--set", "ingress.enabled=true", "--set", "services.web.enabled=false"],
-        capture_output=True, text=True,
+        check=False, capture_output=True, text=True,
     )
     assert result.returncode != 0
     assert "ingress.enabled requires services.web.enabled" in result.stderr

@@ -35,7 +35,7 @@ if [[ "$1" == create && "$2" == -f ]]; then cat > "$CAPTURE"; [[ "${CREATE_FAIL:
 
 def run(ws, *args, input=''):
     root, env = ws
-    return subprocess.run(['bash', str(root / 'scripts/dev.sh'), *args], input=input, text=True, capture_output=True, env=env)
+    return subprocess.run(['bash', str(root / 'scripts/dev.sh'), *args], check=False, input=input, text=True, capture_output=True, env=env)
 
 
 def test_local_credentials_match_and_are_private(workspace):
@@ -94,7 +94,7 @@ def test_existing_kubernetes_credentials_are_never_used_or_overwritten(workspace
 
 
 def test_secret_creation_failure_is_reported_without_deploying(workspace):
-    root, env = workspace
+    _, env = workspace
     env['CREATE_FAIL'] = '1'
     result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n')
     assert result.returncode != 0
@@ -200,7 +200,7 @@ def test_deploy_cancel_and_exact_target(workspace):
 def test_logs_all_with_system_bash(workspace):
     root, env = workspace
     (root / '.env').write_text('existing\n')
-    result = subprocess.run(['/bin/bash', str(root / 'scripts/dev.sh')], input='5\n\n0\n', text=True, capture_output=True, env=env)
+    result = subprocess.run(['/bin/bash', str(root / 'scripts/dev.sh')], check=False, input='5\n\n0\n', text=True, capture_output=True, env=env)
     assert result.returncode == 0, result.stderr
     assert 'logs -f' in (root / 'calls').read_text()
 
