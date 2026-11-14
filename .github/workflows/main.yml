@@ -1,0 +1,45 @@
+name: Main images
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    name: Build and publish images
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ${{ vars.VK_REGISTRY }}
+      NAMESPACE: ${{ vars.VK_IMAGE_NAMESPACE }}
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to VK registry
+        if: ${{ env.REGISTRY != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.VK_REGISTRY_USERNAME }}
+          password: ${{ secrets.VK_REGISTRY_PASSWORD }}
+      - name: Build and push backend
+        if: ${{ env.REGISTRY != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/backend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/backend:${{ env.TAG }}
+      - name: Build and push web
+        if: ${{ env.REGISTRY != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/web/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/web:${{ env.TAG }}
+      - name: Report missing registry configuration
+        if: ${{ env.REGISTRY == '' }}
+        run: echo 'Set VK_REGISTRY and VK_IMAGE_NAMESPACE repository variables plus registry credentials before publishing images.'
