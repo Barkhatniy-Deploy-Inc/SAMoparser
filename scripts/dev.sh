@@ -75,7 +75,8 @@ cluster_inputs() {
 }
 
 prepare_kube() {
-  local release namespace context secret confirm existing pvcs pvc
+  local release namespace context secret confirm existing pvcs pvc pg_password database
+  export -n pg_password
   local input_status=0
   cluster_inputs || input_status=$?
   if (( input_status )); then
@@ -91,9 +92,27 @@ prepare_kube() {
     [[ -z "$pvc" ]] && continue
     [[ "$pvc" =~ ^persistentvolumeclaim/data-${release}-sam-postgresql-[0-9]+$ ]] && { echo 'PostgreSQL PVC exists without Secret; restore the original Secret and verify credentials.' >&2; return 1; }
   done <<< "$pvcs"
-  python3 - "$KUBE_ENV" "$release" "$namespace" "$context" <<'PY' || return 1
+  read -r -s -p 'Managed PostgreSQL password: ' pg_password || return 1
+  printf '\n'
+  [[ -n "$pg_password" ]] || { echo 'PostgreSQL password cannot be empty.' >&2; return 1; }
+  read -r -p 'Database name [sam]: ' database || return 1
+  database=${database:-sam}
+  [[ "$database" =~ ^[A-Za-z0-9._-]+$ ]] || { echo 'Invalid database name.' >&2; return 1; }
+  python3 - "$KUBE_ENV" "$release" "$namespace" "$context" "$database" 3<<<"$pg_password" <<'PY' || return 1
 import os, secrets, sys
-path, release, namespace, context = sys.argv[1:]
+from urllib.parse import quote
+path, release, namespace, context, database = sys.argv[1:]
+pg_host = '37.139.42.15'
+pg_port = 5432
+pg_user = 'sam_app'
+pg_sslmode = 'require'
+pg_password = os.read(3, 1024 * 1024).decode().rstrip('\n')
+if not pg_password:
+    print('PostgreSQL password cannot be empty.', file=sys.stderr)
+    sys.exit(1)
+encoded_user = quote(pg_user, safe='')
+encoded_password = quote(pg_password, safe='')
+database_url = f'postgresql+psycopg://{encoded_user}:{encoded_password}@{pg_host}:{pg_port}/{database}?sslmode={pg_sslmode}'
 if os.path.lexists(path):
     import stat
     try:
@@ -110,17 +129,17 @@ if os.path.lexists(path):
             data[key] = value
         keys = {'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB', 'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'AGENT_API_KEY', 'OPENAI_API_KEY'}
         if data.keys() != keys or any(not data[k] for k in keys - {'OPENAI_API_KEY'}): raise ValueError()
-        if data['POSTGRES_USER'] != 'sam' or data['POSTGRES_DB'] != 'sam': raise ValueError()
-        if any(c not in '0123456789abcdef' for c in data['POSTGRES_PASSWORD']) or len(data['POSTGRES_PASSWORD']) != 64: raise ValueError()
-        if data['DATABASE_URL'] != f"postgresql+psycopg://sam:{data['POSTGRES_PASSWORD']}@{release}-sam-postgresql:5432/sam": raise ValueError()
+        if data['POSTGRES_USER'] != 'sam_app' or data['POSTGRES_DB'] != database: raise ValueError()
+        encoded_user = quote(data['POSTGRES_USER'], safe='')
+        encoded_password = quote(data['POSTGRES_PASSWORD'], safe='')
+        if data['DATABASE_URL'] != f'postgresql+psycopg://{encoded_user}:{encoded_password}@37.139.42.15:5432/{database}?sslmode=require': raise ValueError()
         if data['REDIS_URL'] != f'redis://{release}-sam-redis:6379/0': raise ValueError()
     except (OSError, ValueError, UnicodeError):
         print('Existing Kubernetes credentials are unsafe, incomplete or for another target; refusing reuse.', file=sys.stderr)
         sys.exit(1)
     print('Reusing existing private Kubernetes credentials; no credentials were rotated.')
     sys.exit(0)
-pw = secrets.token_hex(32)
-values = {'POSTGRES_USER': 'sam', 'POSTGRES_PASSWORD': pw, 'POSTGRES_DB': 'sam', 'DATABASE_URL': f'postgresql+psycopg://sam:{pw}@{release}-sam-postgresql:5432/sam', 'REDIS_URL': f'redis://{release}-sam-redis:6379/0', 'JWT_SECRET': secrets.token_hex(32), 'AGENT_API_KEY': secrets.token_hex(32), 'OPENAI_API_KEY': ''}
+values = {'POSTGRES_USER': pg_user, 'POSTGRES_PASSWORD': pg_password, 'POSTGRES_DB': database, 'DATABASE_URL': database_url, 'REDIS_URL': f'redis://{release}-sam-redis:6379/0', 'JWT_SECRET': secrets.token_hex(32), 'AGENT_API_KEY': secrets.token_hex(32), 'OPENAI_API_KEY': ''}
 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
 with os.fdopen(fd, 'w', encoding='utf-8') as f:
     f.write(f'# release={release} namespace={namespace} context={context}\n')

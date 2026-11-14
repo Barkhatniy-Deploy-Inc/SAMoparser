@@ -23,25 +23,35 @@ def test_external_dependencies_remain_default():
     assert 'key: "REDIS_URL"' in result
 
 
-def test_hackathon_stateful_services_and_initialization():
+def test_hackathon_uses_external_postgresql_and_persistent_redis():
     result = render("-f", str(CHART / "values-hackathon.yaml"))
-    assert result.count("kind: StatefulSet") == 2
-    for name in ("postgresql", "redis"):
-        assert f"name: demo-sam-{name}" in result
-        assert f"serviceName: demo-sam-{name}" in result
-    assert result.count("whenDeleted: Retain") == 2
-    assert result.count("whenScaled: Retain") == 2
-    assert "CREATE EXTENSION IF NOT EXISTS vector" in result
-    assert "/docker-entrypoint-initdb.d" in result
+    assert "demo-sam-postgresql" not in result
+    assert result.count("kind: StatefulSet") == 1
+    assert "name: demo-sam-redis" in result
+    assert "serviceName: demo-sam-redis" in result
+    assert "volumeClaimTemplates:" in result
+    assert "whenDeleted: Retain" in result
+    assert "whenScaled: Retain" in result
     assert '"--appendonly"' in result and '"yes"' in result
-    for key in ("POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"):
-        assert f"key: {key}" in result
+    for setting in ('DB_HOST: "37.139.42.15"', 'DB_PORT: "5432"',
+                    'DB_USER: "sam_app"', 'DB_SSLMODE: "require"',
+                    'REDIS_HOST: "demo-sam-redis"', 'REDIS_PORT: "6379"'):
+        assert setting in result
     assert "name: demo-sam-worker" not in result
     assert "name: demo-sam-migration" not in result
 
 
+def test_opt_in_postgresql_initialization():
+    result = render("--set", "postgresql.enabled=true")
+    assert "name: demo-sam-postgresql" in result
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in result
+    assert "/docker-entrypoint-initdb.d" in result
+    for key in ("POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"):
+        assert f"key: {key}" in result
+
+
 def test_postgresql_readiness_uses_authenticated_tcp_and_checks_vector():
-    result = render("-f", str(CHART / "values-hackathon.yaml"))
+    result = render("-f", str(CHART / "values-hackathon.yaml"), "--set", "postgresql.enabled=true")
     postgres = result.split("kind: StatefulSet\nmetadata:\n  name: demo-sam-postgresql", 1)[1].split("\n---", 1)[0]
     probe = postgres.split("readinessProbe:", 1)[1].split("volumeMounts:", 1)[0]
     lines = probe.splitlines()
@@ -92,7 +102,7 @@ def test_connection_settings_follow_each_dependency_mode():
 
 
 def test_stateful_storage_is_configurable_and_components_independent():
-    result = render("-f", str(CHART / "values-hackathon.yaml"), "--set", "postgresql.persistence.storageClass=fast", "--set", "postgresql.persistence.size=12Gi", "--set", "redis.enabled=false")
+    result = render("-f", str(CHART / "values-hackathon.yaml"), "--set", "postgresql.enabled=true", "--set", "postgresql.persistence.storageClass=fast", "--set", "postgresql.persistence.size=12Gi", "--set", "redis.enabled=false")
     assert "name: demo-sam-postgresql" in result
     assert "name: demo-sam-redis" not in result
     assert 'storageClassName: "fast"' in result

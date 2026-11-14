@@ -77,7 +77,7 @@ def test_local_up_stops_if_credentials_cannot_be_created(workspace):
 def test_prepare_fails_closed_if_pvc_exists(workspace):
     root, env = workspace
     env['PVCS'] = 'persistentvolumeclaim/data-release-sam-postgresql-0'
-    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n')
+    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n')
     assert not (root / 'secret.json').exists()
     assert 'PVC' in result.stdout + result.stderr
 
@@ -87,7 +87,7 @@ def test_existing_kubernetes_credentials_are_never_used_or_overwritten(workspace
     path = root / '.env.kubernetes'
     original = 'POSTGRES_PASSWORD=do-not-replace\n'
     path.write_text(original)
-    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n')
+    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n')
     assert path.read_text() == original
     assert not (root / 'secret.json').exists()
     assert 'Secret created' not in result.stdout
@@ -96,20 +96,32 @@ def test_existing_kubernetes_credentials_are_never_used_or_overwritten(workspace
 def test_secret_creation_failure_is_reported_without_deploying(workspace):
     root, env = workspace
     env['CREATE_FAIL'] = '1'
-    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n')
+    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n')
     assert result.returncode != 0
     assert 'Secret created' not in result.stdout
     assert 'Secret created' not in result.stderr
 
 
+def test_prepare_accepts_custom_database_name(workspace):
+    import json
+    root, _ = workspace
+    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\nsecret\ncustom_db\n0\n')
+    assert result.returncode == 0
+    data = json.loads((root / 'secret.json').read_text())['stringData']
+    assert data['POSTGRES_DB'] == 'custom_db'
+    assert data['DATABASE_URL'] == 'postgresql+psycopg://sam_app:secret@37.139.42.15:5432/custom_db?sslmode=require'
+
+
 def test_prepare_creates_contract_without_secrets_in_arguments(workspace):
     import json
     root, _ = workspace
-    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n')
+    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n')
     assert result.returncode == 0
     data = json.loads((root / 'secret.json').read_text())['stringData']
     assert set(data) == {'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB', 'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'AGENT_API_KEY', 'OPENAI_API_KEY'}
-    assert f":{data['POSTGRES_PASSWORD']}@release-sam-postgresql:" in data['DATABASE_URL']
+    assert data['POSTGRES_USER'] == 'sam_app'
+    assert data['POSTGRES_DB'] == 'sam'
+    assert data['DATABASE_URL'] == 'postgresql+psycopg://sam_app:pa%24%24word%2F%40@37.139.42.15:5432/sam?sslmode=require'
     assert data['REDIS_URL'] == 'redis://release-sam-redis:6379/0'
     assert data['POSTGRES_PASSWORD'] not in (root / 'calls').read_text() + result.stdout + result.stderr
 
@@ -133,7 +145,7 @@ def test_volume_query_failure_is_closed(workspace):
 def test_unrelated_pvc_does_not_block_preparation(workspace):
     root, env = workspace
     env['PVCS'] = 'persistentvolumeclaim/data-other-sam-postgresql-0\n'
-    assert run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n').returncode == 0
+    assert run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n').returncode == 0
     assert (root / 'secret.json').exists()
 
 
@@ -141,7 +153,7 @@ def test_unrelated_pvc_does_not_block_preparation(workspace):
 def test_failed_cluster_reads_abort(workspace, failure):
     root, env = workspace
     env[failure] = '1'
-    assert run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n').returncode != 0
+    assert run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n').returncode != 0
     assert not (root / 'secret.json').exists()
     assert not (root / '.env.kubernetes').exists()
 
@@ -149,10 +161,10 @@ def test_failed_cluster_reads_abort(workspace, failure):
 def test_retry_after_failed_create_reuses_credentials(workspace):
     root, env = workspace
     env['CREATE_FAIL'] = '1'
-    assert run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n').returncode != 0
+    assert run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n').returncode != 0
     before = (root / '.env.kubernetes').read_bytes()
     env['CREATE_FAIL'] = '0'
-    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n')
+    result = run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n')
     assert result.returncode == 0
     assert (root / '.env.kubernetes').read_bytes() == before
     assert 'reusing' in result.stdout.lower()
@@ -161,7 +173,7 @@ def test_retry_after_failed_create_reuses_credentials(workspace):
 def test_retry_wrong_context_is_refused(workspace):
     root, env = workspace
     env['CREATE_FAIL'] = '1'
-    run(workspace, input='6\nrelease\nnamespace\ncontext\ny\n0\n')
+    run(workspace, input='6\nrelease\nnamespace\ncontext\ny\npa$$word/@\nsam\n0\n')
     (root / 'secret.json').unlink()
     env['CREATE_FAIL'] = '0'
     assert run(workspace, input='6\nrelease\nnamespace\nother\ny\n0\n').returncode != 0

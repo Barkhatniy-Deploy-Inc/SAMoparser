@@ -1,12 +1,12 @@
 # SAM Helm chart
 
-This chart deploys the SAM scaffold as one release containing API, ingest, Celery worker, and web workloads. PostgreSQL and Redis are external by default. The optional `values-hackathon.yaml` enables single-replica built-in PostgreSQL and Redis and disables the unimplemented worker and migrations.
+This chart deploys the SAM scaffold as one release containing API, ingest, Celery worker, and web workloads. PostgreSQL and Redis are external by default. The optional `values-hackathon.yaml` uses VK Cloud PostgreSQL at `37.139.42.15:5432` as `sam_app` with `sslMode: require`, keeps single-replica Redis in-cluster, and disables the unimplemented worker and migrations.
 
 ## Required secret
 
 Create a Secret before installing and set `existingSecret` to its name. The Secret must contain keys for `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `AGENT_API_KEY`, and `OPENAI_API_KEY` (key names can be remapped with `secretKeys`). This chart never creates or stores Secret objects.
 
-For the built-in PostgreSQL and Redis setup, run `./scripts/dev.sh` from the repository root and select **Prepare Kubernetes Secret**. Confirm the release, namespace, and context; the script creates a Secret named `<release>-sam-secrets` and stores credentials in a private local file. Keep that file safe. Select **Deploy Kubernetes** to install using `values-hackathon.yaml` and the same target. The generated connection URLs are for the built-in services, not external databases.
+For the hackathon profile, run `./scripts/dev.sh` and select **Prepare Kubernetes Secret**. Enter the existing VK Cloud PostgreSQL password and database name (the suggested default is `sam`); the script prepares `DATABASE_URL` for `37.139.42.15:5432`, user `sam_app`, and `sslmode=require`, and points `REDIS_URL` to the in-cluster Redis service. Confirm that TLS is supported by the database. Keep the password out of values files and command arguments. The chart does not generate or validate these URLs.
 
 Alternatively, provision a Secret through your organization's secret manager before installation; avoid putting secret values in command arguments, shell history, or Helm values. For example, with external services and a Secret named `sam-secrets`, install with its name:
 
@@ -19,7 +19,7 @@ External database and Redis host/port/user/SSL settings are rendered into the ch
 
 ## Built-in stateful services
 
-For `values-hackathon.yaml`, also add `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` to the existing Secret. Their values must agree with `DATABASE_URL`. Built-in PostgreSQL does not configure TLS: `DB_SSLMODE` is `disable` when it is enabled; configure the separate `DATABASE_URL` accordingly (for example with `sslmode=disable`). External PostgreSQL continues to use `database.sslMode`. Use the built-in service only on a trusted network.
+For a profile with built-in PostgreSQL enabled explicitly, add `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` to the existing Secret. Their values must agree with `DATABASE_URL`. Built-in PostgreSQL does not configure TLS: `DB_SSLMODE` is `disable` when it is enabled; configure the separate `DATABASE_URL` accordingly (for example with `sslmode=disable`). External PostgreSQL, including the hackathon profile, uses `database.host`, `database.port`, `database.user`, and `database.sslMode`.
 
 PostgreSQL runs the pgvector initialization script only when initializing a fresh volume. If initialization fails after the data directory is created, it will not automatically rerun on restart: the authenticated TCP readiness check remains unready until the configured database contains `vector`. Inspect the PostgreSQL logs and resolve the underlying error first. Back up the existing volume, then connect with an authorized database administrator to the configured database and run `CREATE EXTENSION IF NOT EXISTS vector;`; verify it exists in `pg_extension`. If the Secret credentials no longer match the database, restore access using valid existing administrator credentials before correcting the Secret. Do not delete the PVC merely to retry initialization. Changing the Secret does **not** rotate the database password; rotate credentials explicitly in PostgreSQL and update the Secret and connection URL in a coordinated maintenance operation. The chart does not configure a credential-dependent liveness probe that would restart PostgreSQL in this situation.
 

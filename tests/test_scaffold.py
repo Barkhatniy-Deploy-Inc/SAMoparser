@@ -26,6 +26,17 @@ def test_backend_has_shared_image_and_pinned_dependencies():
     assert all("==" in line for line in dependency_lines)
 
 
+def test_worker_uses_redis_url_for_broker_and_result_backend(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    worker = importlib.import_module("services.backend.app.worker")
+    worker = importlib.reload(worker)
+
+    assert worker.celery_app.conf.broker_url == "redis://redis:6379/0"
+    assert worker.celery_app.conf.result_backend == "redis://redis:6379/0"
+
+
 def test_worker_template_exposes_celery_application():
     from services.backend.app.worker import celery_app
 

@@ -1,8 +1,13 @@
-# Embedded stateful services are single-node conveniences, not backups.
+# Redis is an in-cluster single-node convenience, not a backup.
 postgresql:
-  enabled: true
+  enabled: false
 redis:
   enabled: true
+database:
+  host: 37.139.42.15
+  port: 5432
+  user: sam_app
+  sslMode: require
 services:
   worker:
     enabled: false
