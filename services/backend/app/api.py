@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
+import json
 import re
 from collections import Counter
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from .db import get_db
 from .models import Installation as InstallationRow
-from .models import Device, SoftwareProduct
+from .models import Device, ImportBatch, SoftwareProduct
 
 app = FastAPI(
     title="SAMoparser — API учёта программного обеспечения",
@@ -25,6 +27,7 @@ app = FastAPI(
     ),
     version="1.0.0",
 )
+MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024
 
 
 class CatalogSoftware(BaseModel):
@@ -186,7 +189,34 @@ def delete_catalog_item(name: str, db: Session = Depends(get_db)) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def import_rows(payload: list[Installation], db: Session) -> tuple[dict[str, Any], list[InstallationRow]]:
+def import_rows(
+    payload: list[Installation],
+    db: Session,
+    idempotency_key: str | None = None,
+) -> tuple[dict[str, Any], list[InstallationRow]]:
+    serialized = json.dumps(
+        [item.model_dump(mode="json") for item in payload],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    fingerprint = hashlib.sha256(serialized).hexdigest()
+    if idempotency_key:
+        previous_batch = db.scalar(
+            select(ImportBatch).where(ImportBatch.idempotency_key == idempotency_key)
+        )
+        if previous_batch is not None:
+            if previous_batch.payload_fingerprint != fingerprint:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency-Key уже использован с другим содержимым файла",
+                )
+            return {
+                "accepted": previous_batch.accepted_count,
+                "unknown": previous_batch.unknown_count,
+                "replayed": True,
+            }, []
+
     products = list(db.scalars(select(SoftwareProduct)))
     devices = {device.computer_id: device for device in db.scalars(select(Device))}
     missing_devices = sorted({item.computer_id for item in payload if item.computer_id not in devices})
@@ -198,8 +228,24 @@ def import_rows(payload: list[Installation], db: Session) -> tuple[dict[str, Any
         row = InstallationRow(computer_id=record["computer_id"], raw_name=record["name"], publisher=record["publisher"], version=record["version"], canonical_name=record["canonical_name"], match_status=record["match_status"], match_score=record["match_score"], software_id=record["software_id"], device_id=devices[record["computer_id"]].id)
         db.add(row)
         inserted.append(row)
+    result = {
+        "accepted": len(records),
+        "unknown": sum(x["match_status"] == "unknown" for x in records),
+        "replayed": False,
+    }
+    if idempotency_key:
+        batch = ImportBatch(
+            idempotency_key=idempotency_key,
+            payload_fingerprint=fingerprint,
+            accepted_count=result["accepted"],
+            unknown_count=result["unknown"],
+        )
+        db.add(batch)
+        db.flush()
+        for row in inserted:
+            row.import_batch_id = batch.id
     db.commit()
-    return {"accepted": len(records), "unknown": sum(x["match_status"] == "unknown" for x in records)}, inserted
+    return result, inserted
 
 
 @app.post("/api/v1/installations", status_code=201, summary="Добавить одну установку", tags=["Установки"])
@@ -208,26 +254,93 @@ def add_installation(item: Installation, db: Session = Depends(get_db)) -> dict[
     return installation_view(inserted[0])
 
 
-@app.post("/api/v1/import/installations", status_code=201, summary="Импортировать установки из JSON", tags=["Импорт"])
-def import_installations(payload: list[Installation], db: Session = Depends(get_db)) -> dict[str, Any]:
-    result, _ = import_rows(payload, db)
-    return result
+async def read_import_file(file: UploadFile) -> tuple[str, bytes]:
+    filename = file.filename or ""
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if extension not in {"csv", "json"}:
+        raise HTTPException(status_code=415, detail="Поддерживаются только файлы .csv и .json")
+    content = await file.read(MAX_IMPORT_FILE_SIZE + 1)
+    if len(content) > MAX_IMPORT_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="Размер файла превышает 10 МБ")
+    if not content:
+        raise HTTPException(status_code=400, detail="Файл пуст")
+    return extension, content
 
 
-@app.post("/api/v1/import/installations/csv", status_code=201, summary="Импортировать установки из CSV", tags=["Импорт"])
-def import_installations_csv(csv_text: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    reader = csv.DictReader(io.StringIO(csv_text))
-    rows = [Installation(computer_id=row.get("computer_id") or row.get("serial_number") or "", name=row.get("name") or row.get("displayname") or "", publisher=row.get("publisher") or "", version=row.get("version") or "") for row in reader]
-    result, _ = import_rows(rows, db)
-    return result
+def parse_csv_installations(content: bytes) -> list[Installation]:
+    try:
+        decoded = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=422, detail="CSV-файл должен быть в кодировке UTF-8") from exc
+    reader = csv.DictReader(io.StringIO(decoded))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=422, detail="В CSV-файле отсутствует строка заголовков")
+    try:
+        return [
+            Installation(
+                computer_id=row.get("computer_id") or row.get("serial_number") or row.get("COMPUTERS.SERIAL_NUMBER") or "",
+                name=row.get("name") or row.get("displayname") or row.get("SOFTWARE.DISPLAYNAME") or "",
+                publisher=row.get("publisher") or row.get("SOFTWARE.PUBLISHER") or "",
+                version=row.get("version") or row.get("SOFTWARE.VERSION") or "",
+            )
+            for row in reader
+        ]
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Строки CSV не соответствуют формату установок") from exc
 
 
-@app.get("/api/v1/installations", summary="Получить список установок", tags=["Установки"])
-def get_installations(status: str | None = None, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+@app.post("/api/v1/import/installations", status_code=201, summary="Импортировать установки из файла JSON или CSV", tags=["Импорт"])
+async def import_installations(
+    file: UploadFile = File(..., description="Файл .json или .csv с установками"),
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=200)] = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    extension, content = await read_import_file(file)
+    try:
+        if extension == "json":
+            try:
+                parsed = json.loads(content.decode("utf-8-sig"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise HTTPException(status_code=422, detail="Некорректный JSON-файл в кодировке UTF-8") from exc
+            if not isinstance(parsed, list):
+                raise HTTPException(status_code=422, detail="JSON должен содержать массив установок")
+            payload = [Installation.model_validate(item) for item in parsed]
+        else:
+            payload = parse_csv_installations(content)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Записи файла не соответствуют формату установок") from exc
+    return import_rows(payload, db, idempotency_key)[0]
+
+
+@app.post("/api/v1/import/installations/csv", status_code=201, summary="Импортировать установки из CSV-файла", tags=["Импорт"])
+async def import_installations_csv(
+    file: UploadFile = File(..., description="CSV-файл с заголовками компьютер, название, издатель и версия"),
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=200)] = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    extension, content = await read_import_file(file)
+    if extension != "csv":
+        raise HTTPException(status_code=415, detail="Для этой ручки требуется CSV-файл")
+    return import_rows(parse_csv_installations(content), db, idempotency_key)[0]
+
+
+@app.get("/api/v1/installations", summary="Получить страницу установок", tags=["Установки"])
+def get_installations(
+    status: Annotated[str | None, Query(description="Фильтр по статусу сопоставления: matched или unknown")] = None,
+    limit: Annotated[int, Query(ge=1, le=500, description="Число записей на странице (от 1 до 500)")] = 100,
+    offset: Annotated[int, Query(ge=0, description="Число записей, которые нужно пропустить")] = 0,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    if not 1 <= limit <= 500 or offset < 0:
+        raise HTTPException(status_code=422, detail="Параметры страницы вне допустимого диапазона")
     query = select(InstallationRow).order_by(InstallationRow.id)
+    count_query = select(func.count()).select_from(InstallationRow)
     if status is not None:
         query = query.where(InstallationRow.match_status == status)
-    return [installation_view(row) for row in db.scalars(query)]
+        count_query = count_query.where(InstallationRow.match_status == status)
+    total = db.scalar(count_query) or 0
+    items = [installation_view(row) for row in db.scalars(query.limit(limit).offset(offset))]
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @app.delete("/api/v1/installations/{installation_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить установку", tags=["Установки"])

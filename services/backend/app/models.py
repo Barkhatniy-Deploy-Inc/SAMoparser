@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -29,11 +29,23 @@ class Device(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     computer_id: Mapped[str] = mapped_column(String(200), unique=True, index=True)
-    display_name: Mapped[str] = mapped_column(String(200), default="")
-    department: Mapped[str] = mapped_column(String(200), default="")
-    user_name: Mapped[str] = mapped_column(String(200), default="")
-    operating_system: Mapped[str] = mapped_column(String(100), default="")
+    display_name: Mapped[str] = mapped_column(String(200), default="", server_default=text("''"))
+    department: Mapped[str] = mapped_column(String(200), default="", server_default=text("''"))
+    user_name: Mapped[str] = mapped_column(String(200), default="", server_default=text("''"))
+    operating_system: Mapped[str] = mapped_column(String(100), default="", server_default=text("''"))
     installations: Mapped[list[Installation]] = relationship(back_populates="device")
+
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    idempotency_key: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    payload_fingerprint: Mapped[str] = mapped_column(String(64))
+    accepted_count: Mapped[int] = mapped_column(Integer)
+    unknown_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    installations: Mapped[list[Installation]] = relationship(back_populates="import_batch")
 
 
 class Installation(Base):
@@ -50,9 +62,11 @@ class Installation(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     software_id: Mapped[int | None] = mapped_column(ForeignKey("software_products.id", ondelete="SET NULL"), nullable=True, index=True)
     device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True, nullable=True)
+    import_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batches.id", ondelete="SET NULL"), index=True, nullable=True)
 
     software: Mapped[SoftwareProduct | None] = relationship(back_populates="installations")
     device: Mapped[Device] = relationship(back_populates="installations")
+    import_batch: Mapped[ImportBatch | None] = relationship(back_populates="installations")
 
 
 class RiskEvent(Base):
