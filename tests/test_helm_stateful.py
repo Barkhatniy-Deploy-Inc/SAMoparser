@@ -3,7 +3,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-
 CHART = Path(__file__).resolve().parents[1] / "deploy/helm/sam"
 
 
@@ -66,9 +65,9 @@ def test_postgresql_readiness_uses_authenticated_tcp_and_checks_vector():
                    ARGS_FILE=str(Path(directory) / "args"), POSTGRES_USER="sam",
                    POSTGRES_PASSWORD="secret", POSTGRES_DB="samdb", EXPECTED_PASSWORD="secret")
         for output, expected in (("1", 0), ("0", 1), ("", 1)):
-            process = subprocess.run(command, env=dict(env, PSQL_RESULT=output), capture_output=True)
+            process = subprocess.run(command, check=False, env=dict(env, PSQL_RESULT=output), capture_output=True)
             assert (process.returncode == 0) == (expected == 0)
-        assert subprocess.run(command, env=dict(env, PSQL_RESULT="1", EXPECTED_PASSWORD="wrong"), capture_output=True).returncode != 0
+        assert subprocess.run(command, check=False, env=dict(env, PSQL_RESULT="1", EXPECTED_PASSWORD="wrong"), capture_output=True).returncode != 0
         args = (Path(directory) / "args").read_text()
         assert "127.0.0.1" in args
         assert "pg_extension" in args and "vector" in args

@@ -1,12 +1,11 @@
 import subprocess
 from pathlib import Path
 
-
 CHART = Path(__file__).resolve().parents[1] / "deploy/helm/sam"
 
 
 def helm(*args):
-    return subprocess.run(["helm", "template", "demo", str(CHART), "--set", "existingSecret=test-secret", *args], capture_output=True, text=True)
+    return subprocess.run(["helm", "template", "demo", str(CHART), "--set", "existingSecret=test-secret", *args], check=False, capture_output=True, text=True)
 
 
 def test_web_has_no_secret_environment_and_backends_keep_secret_refs():
