@@ -2,7 +2,11 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
 
-app = FastAPI(title="SAMoparser Ingest")
+app = FastAPI(
+    title="SAMoparser — сервис загрузки данных",
+    description="Сервис приёма данных об установленных программах и источниках инвентаризации.",
+    version="1.0.0",
+)
 
 
 @app.get("/healthz")
