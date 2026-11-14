@@ -95,7 +95,7 @@ main() {
       require_env
       "${COMPOSE[@]}" up --build -d "$@"
       echo
-      echo "Local stack is starting. Web UI: http://localhost:8080"
+       echo "Local stack is starting. Web UI: http://localhost:${WEB_PORT:-8080}"
       ;;
     down)
       require_command docker
