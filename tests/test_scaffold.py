@@ -61,12 +61,12 @@ def test_web_and_agent_templates_exist():
 
 def test_minimal_sam_flow_matches_alias_and_reports_unknown():
     from sqlalchemy import create_engine
-    from sqlalchemy.pool import StaticPool
     from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
 
     from services.backend.app import api
-    from services.backend.app.db import Base
     from services.backend.app.api import CatalogSoftware, DeviceInput, Installation
+    from services.backend.app.db import Base
 
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
@@ -99,7 +99,7 @@ def test_delete_endpoints_remove_records_and_unmatch_catalog_software():
     with Session(engine) as db:
         api.add_device(DeviceInput(computer_id="pc-delete"), db)
         api.add_catalog_item(CatalogSoftware(name="Test Tool"), db)
-        created = api.add_installation(Installation(computer_id="pc-delete", name="Test Tool"), db)
+        api.add_installation(Installation(computer_id="pc-delete", name="Test Tool"), db)
         installation_id = db.query(api.InstallationRow).first().id
 
         api.delete_catalog_item("Test Tool", db)
@@ -142,13 +142,14 @@ def test_installations_are_paginated_and_filterable():
 
 def test_installation_import_is_idempotent_and_rejects_key_reuse_with_other_payload():
     from fastapi import HTTPException
-    from sqlalchemy import create_engine, func, select
+    from sqlalchemy import create_engine, select
     from sqlalchemy.orm import Session
 
     from services.backend.app import api
     from services.backend.app.api import DeviceInput, Installation
     from services.backend.app.db import Base
-    from services.backend.app.models import ImportBatch, Installation as InstallationRow
+    from services.backend.app.models import ImportBatch
+    from services.backend.app.models import Installation as InstallationRow
 
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

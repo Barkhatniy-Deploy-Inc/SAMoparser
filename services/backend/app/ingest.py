@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
-
 app = FastAPI(
     title="SAMoparser — сервис загрузки данных",
     description="Сервис приёма данных об установленных программах и источниках инвентаризации.",

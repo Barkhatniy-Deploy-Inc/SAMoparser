@@ -7,18 +7,28 @@ import json
 import re
 from collections import Counter
 from typing import Annotated, Any
-from zipfile import BadZipFile, ZipFile
 from xml.etree import ElementTree as ET
+from zipfile import BadZipFile, ZipFile
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import Installation as InstallationRow
 from .models import Device, ImportBatch, SoftwareProduct
+from .models import Installation as InstallationRow
 
 app = FastAPI(
     title="SAMoparser — API учёта программного обеспечения",

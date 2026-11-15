@@ -1,7 +1,7 @@
 """Добавить реестр импортов для идемпотентной загрузки."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0003_add_import_batches"
 down_revision = "0002_add_devices"

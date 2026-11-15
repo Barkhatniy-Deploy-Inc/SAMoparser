@@ -3,11 +3,10 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import create_engine, pool
-
+from app import models  # noqa: F401
 from app.config import get_settings
 from app.db import Base
-from app import models  # noqa: F401
+from sqlalchemy import create_engine, pool
 
 config = context.config
 if config.config_file_name:

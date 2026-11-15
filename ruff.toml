@@ -1,0 +1,4 @@
+[lint]
+
+# FastAPI requires dependency and upload declarations in parameter defaults.
+per-file-ignores = { "services/backend/app/api.py" = ["B008"] }
