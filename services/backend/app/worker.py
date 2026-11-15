@@ -4,6 +4,7 @@ import os
 
 from celery import Celery
 
+from celery import Celery
 
 celery_app = Celery("samoparser")
 celery_app.conf.broker_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")

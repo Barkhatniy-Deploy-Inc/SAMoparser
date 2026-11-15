@@ -18,6 +18,10 @@ spec:
       {{- include "sam.selectorLabels" (dict "root" $root "component" $name) | nindent 6 }}
   template:
     metadata:
+      {{- if eq $name "web" }}
+      annotations:
+        checksum/web-nginx: {{ include (print $root.Template.BasePath "/web-nginx-configmap.yaml") $root | sha256sum }}
+      {{- end }}
       labels:
         {{- include "sam.selectorLabels" (dict "root" $root "component" $name) | nindent 8 }}
     spec:
@@ -29,12 +33,25 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
+      {{- if eq $name "web" }}
+      volumes:
+        - name: web-nginx
+          configMap:
+            name: {{ include "sam.fullname" $root }}-web-nginx
+      {{- end }}
       containers:
         - name: {{ $name }}
           {{- $image := $root.Values.global.backendImage }}
           {{- if eq $name "web" }}{{ $image = $root.Values.global.webImage }}{{ end }}
           image: {{ printf "%s:%s" $image.repository ($image.tag | toString) | quote }}
           imagePullPolicy: {{ $image.pullPolicy }}
+          {{- if eq $name "web" }}
+          volumeMounts:
+            - name: web-nginx
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+          {{- end }}
           {{- with $svc.command }}
           command:
             {{- toYaml . | nindent 12 }}
@@ -55,8 +72,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "sam.fullname" $root }}-config
+          {{- if ne $name "web" }}
           env:
             {{- include "sam.secretEnv" $root | nindent 12 }}
+          {{- end }}
           securityContext:
             {{- toYaml $root.Values.securityContext | nindent 12 }}
           resources:

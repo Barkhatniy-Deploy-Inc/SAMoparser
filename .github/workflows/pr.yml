@@ -1,0 +1,94 @@
+name: Pull request checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r services/backend/requirements.txt pytest httpx ruff
+      - name: Lint backend
+        run: ruff check services/backend tests
+      - name: Run Python tests
+        run: python -m pytest tests
+
+  web:
+    name: Web lint and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install web dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f package.json ]; then
+            npm install
+          else
+            echo 'TODO: add services/web/package.json; web checks are not available yet.'
+          fi
+      - name: Lint web
+        run: |
+          if [ -f package.json ]; then
+            npm run lint --if-present
+          else
+            echo 'TODO: add web source and package metadata.'
+          fi
+      - name: Test web
+        run: |
+          if [ -f package.json ]; then
+            npm test --if-present
+          else
+            echo 'TODO: add web tests under services/web.'
+          fi
+
+  helm:
+    name: Helm lint and template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Validate chart
+        run: |
+          helm lint deploy/helm/sam
+          helm template ci deploy/helm/sam --set existingSecret=ci-existing-secret >/dev/null
+
+  bash:
+    name: Bash syntax checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell scripts
+        run: bash -n scripts/dev.sh
+
+  trivy:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table

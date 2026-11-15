@@ -1,8 +1,12 @@
 .git
+.github
 .env
-docs
+.env.*
+!.env.example
+node_modules
+dist
 __pycache__
-*.py[cod]
 .pytest_cache
-services/web/node_modules
-services/web/dist
+.ruff_cache
+.venv
+.DS_Store
