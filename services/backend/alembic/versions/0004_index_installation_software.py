@@ -9,8 +9,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_index("ix_installations_software_id", "installations", ["software_id"])
+    # The index was created with the initial installations table in 0001.
+    pass
 
 
 def downgrade() -> None:
-    op.drop_index("ix_installations_software_id", table_name="installations")
+    pass
