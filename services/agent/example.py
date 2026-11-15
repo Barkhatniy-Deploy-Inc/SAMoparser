@@ -1,8 +1,8 @@
-"""Placeholder agent entrypoint."""
+"""Точка входа демонстрационного агента сбора данных."""
 
 
 def main() -> None:
-    print("Agent scaffold")
+    print("Демонстрационный агент SAMoparser")
 
 
 if __name__ == "__main__":

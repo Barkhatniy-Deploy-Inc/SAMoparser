@@ -1,6 +1,6 @@
-# SAMoparser — командный scaffold
+# SAMoparser — командный каркас
 
-Репозиторий предназначен как стартовая площадка для команды, а не как готовая SAM-система. Здесь есть запускаемый контейнерный каркас сервисов, локальная инфраструктура, Helm-шаблон и CI/CD; доменная логика SAM, миграции и AI-функции должны быть реализованы по backlog.
+Репозиторий предназначен как стартовая площадка для команды, а не как готовая SAM-система. Здесь есть запускаемый контейнерный каркас сервисов, локальная инфраструктура, Helm-шаблон и CI/CD; доменная логика SAM, миграции и функции ИИ реализуются по плану работ.
 
 ## Архитектура
 
@@ -31,7 +31,7 @@ flowchart LR
 3. Helm требует заранее созданный Secret. PostgreSQL и Redis по умолчанию внешние; hackathon-профиль включает встроенные экземпляры.
 4. Migration hook выключен (`migrations.enabled=false`), потому что в scaffold нет Alembic-моделей и миграций. Включать его можно только после реализации миграционного пакета и review.
 5. Для векторов целевой основной путь — pgvector; fallback `float8[]/jsonb` и cosine similarity должен быть отдельной задачей этапа 6.
-6. OpenAI API, JWT, API-key auth, CRUD, matching, license calculation и dashboard намеренно не реализованы в scaffold.
+6. OpenAI API, JWT, авторизация по API-ключу и расширенная аналитика реализуются по плану. Минимальные CRUD, сопоставление, расчёт лицензий и панель управления уже добавлены в тестовый прототип.
 7. Указанные образы и `sam.example.com` — placeholders; registry и домен задаются через CI variables/Helm values.
 
 ## Локальный запуск
@@ -41,8 +41,8 @@ flowchart LR
 ```bash
 ./scripts/dev.sh env
 ./scripts/dev.sh up
-curl http://localhost:8000/healthz
-curl http://localhost:8001/readyz
+curl http://localhost:8000/health
+curl http://localhost:8001/ready
 open http://localhost:8080
 ```
 
@@ -67,7 +67,7 @@ make helm-lint
 
 `./scripts/dev.sh env` не перезаписывает существующий `.env`. `env --force` может заменить существующий файл, только если удалось определить проект Compose и подтвердить отсутствие его `postgres-data` volume, а файл не содержит переопределений `COMPOSE_`. **При замене теряются все существующие настройки `.env`**, а не только учётные данные; заранее сохраните необходимые настройки. Для генерации нужны Python 3 и Docker. Если `.env` отсутствует, любой Compose volume с меткой `postgres-data`, независимо от проекта, блокирует генерацию; восстановите исходный `.env` и имя проекта из доверенной резервной копии. При ошибке проверки volume или определения проекта генерация также прерывается. Файл создаётся с правами `0600`. **Смена файла не меняет пароль в существующем PostgreSQL volume**: сохраните данные и согласуйте пароль базы и `DATABASE_URL` вручную. Не публикуйте `.env` и секреты; `config` вызывает `docker compose config --quiet` для проверки, не печатая содержимое конфигурации.
 
-`make migrate` и `make seed` оставлены как командные точки расширения; до добавления Alembic/seed-модулей они ожидаемо недоступны.
+`make migrate` запускает Alembic-миграции в контейнере. `make seed` пока оставлен точкой расширения.
 
 ## Hackathon: подготовка Kubernetes
 
@@ -107,4 +107,4 @@ helm rollback samoparser REVISION -n prod --wait
 
 Работу вести по [`docs/implementation-plan.md`](docs/implementation-plan.md): сначала ADR/security/API contracts, затем auth skeleton, SQLAlchemy/Alembic и RLS, idempotent ingest, parsing/PII, matching/vector fallback, safe assistant, UI и только после этого включать migration Job.
 
-Каждый этап должен добавлять тесты, обновлять OpenAPI/ADR и явно отделять реализованное от TODO. AI-ответы до human review считаются рекомендациями, а не фактом.
+Каждый этап должен добавлять тесты, обновлять OpenAPI/ADR и явно отделять реализованное от TODO. Ответы ИИ до проверки человеком считаются рекомендациями, а не установленными фактами.

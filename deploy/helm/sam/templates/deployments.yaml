@@ -62,11 +62,11 @@ spec:
               containerPort: {{ $svc.port }}
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /health
               port: http
           readinessProbe:
             httpGet:
-              path: {{ if eq $name "web" }}/healthz{{ else }}/readyz{{ end }}
+              path: {{ if eq $name "web" }}/health{{ else }}/ready{{ end }}
               port: http
           {{- end }}
           envFrom:

@@ -89,8 +89,8 @@ flowchart LR
 - `POST /v1/auth/token` — обмен учётных данных/внешнего authorization code на короткоживущий JWT.
 - `POST /v1/api-keys` — создать ключ с scopes и TTL; plaintext возвращается только один раз.
 - `DELETE /v1/api-keys/{id}` — отозвать ключ.
-- `GET /health/live` — liveness без обращения к БД.
-- `GET /health/ready` — readiness с проверкой обязательных зависимостей и таймаутом.
+- `GET /health` — проверка работоспособности без обращения к БД.
+- `GET /ready` — проверка готовности с проверкой обязательных зависимостей и таймаутом.
 
 ### Ingest (`:8001`)
 
