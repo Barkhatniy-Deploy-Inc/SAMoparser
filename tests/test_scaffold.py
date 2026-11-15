@@ -1,4 +1,6 @@
+import io
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -212,11 +214,35 @@ def test_install_import_endpoints_require_file_and_accept_csv_upload():
         assert repeated.status_code == 201
         assert repeated.json()["replayed"] is True
 
-        unsupported = client.post(
+        malformed_xlsx = client.post(
             "/api/v1/import/installations",
-            files={"file": ("installations.xlsx", b"not supported", "application/octet-stream")},
+            files={"file": ("installations.xlsx", b"not supported", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
         )
-        assert unsupported.status_code == 415
+        assert malformed_xlsx.status_code == 422
+
+        xlsx_buffer = io.BytesIO()
+        with ZipFile(xlsx_buffer, "w") as archive:
+            archive.writestr(
+                "xl/workbook.xml",
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Установки" sheetId="1" r:id="rId1"/></sheets></workbook>',
+            )
+            archive.writestr(
+                "xl/_rels/workbook.xml.rels",
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/></Relationships>',
+            )
+            archive.writestr(
+                "xl/worksheets/sheet1.xml",
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+                '<row><c t="inlineStr"><is><t>COMPUTERS.SERIAL_NUMBER</t></is></c><c t="inlineStr"><is><t>SOFTWARE.DISPLAYNAME</t></is></c><c t="inlineStr"><is><t>SOFTWARE.PUBLISHER</t></is></c><c t="inlineStr"><is><t>SOFTWARE.VERSION</t></is></c></row>'
+                '<row><c t="inlineStr"><is><t>PC-UPLOAD</t></is></c><c t="inlineStr"><is><t>XLSX Example</t></is></c><c t="inlineStr"><is><t>Example Publisher</t></is></c><c t="inlineStr"><is><t>3.0</t></is></c></row>'
+                '</sheetData></worksheet>',
+            )
+        xlsx_upload = client.post(
+            "/api/v1/import/installations",
+            files={"file": ("installations.xlsx", xlsx_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert xlsx_upload.status_code == 201
+        assert xlsx_upload.json()["accepted"] == 1
 
         json_content = '[{"computer_id":"PC-UPLOAD","name":"JSON Example","version":"2.0"}]'
         json_upload = client.post(

@@ -7,6 +7,8 @@ import json
 import re
 from collections import Counter
 from typing import Annotated, Any
+from zipfile import BadZipFile, ZipFile
+from xml.etree import ElementTree as ET
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import PlainTextResponse
@@ -28,6 +30,11 @@ app = FastAPI(
     version="1.0.0",
 )
 MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024
+MAX_XLSX_UNCOMPRESSED_SIZE = 50 * 1024 * 1024
+XLSX_NS = {
+    "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+}
 
 
 class CatalogSoftware(BaseModel):
@@ -257,8 +264,8 @@ def add_installation(item: Installation, db: Session = Depends(get_db)) -> dict[
 async def read_import_file(file: UploadFile) -> tuple[str, bytes]:
     filename = file.filename or ""
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if extension not in {"csv", "json"}:
-        raise HTTPException(status_code=415, detail="Поддерживаются только файлы .csv и .json")
+    if extension not in {"csv", "json", "xlsx"}:
+        raise HTTPException(status_code=415, detail="Поддерживаются только файлы .csv, .json и .xlsx")
     content = await file.read(MAX_IMPORT_FILE_SIZE + 1)
     if len(content) > MAX_IMPORT_FILE_SIZE:
         raise HTTPException(status_code=413, detail="Размер файла превышает 10 МБ")
@@ -289,6 +296,75 @@ def parse_csv_installations(content: bytes) -> list[Installation]:
         raise HTTPException(status_code=422, detail="Строки CSV не соответствуют формату установок") from exc
 
 
+def parse_xlsx_installations(content: bytes) -> list[Installation]:
+    """Прочитать установки с первого листа XLSX без сторонних библиотек."""
+    try:
+        with ZipFile(io.BytesIO(content)) as archive:
+            members = [info for info in archive.infolist() if not info.is_dir()]
+            if sum(info.file_size for info in members) > MAX_XLSX_UNCOMPRESSED_SIZE:
+                raise HTTPException(status_code=413, detail="Распакованный XLSX-файл слишком большой")
+
+            shared_strings: list[str] = []
+            if "xl/sharedStrings.xml" in archive.namelist():
+                shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+                shared_strings = [
+                    "".join(node.text or "" for node in item.findall(".//m:t", XLSX_NS))
+                    for item in shared_root.findall("m:si", XLSX_NS)
+                ]
+
+            workbook_root = ET.fromstring(archive.read("xl/workbook.xml"))
+            relationships_root = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+            targets = {
+                node.attrib["Id"]: node.attrib["Target"]
+                for node in relationships_root
+            }
+            sheet = workbook_root.find(".//m:sheets/m:sheet", XLSX_NS)
+            if sheet is None:
+                raise HTTPException(status_code=422, detail="В XLSX-файле нет листов")
+            relationship_id = sheet.attrib["{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"]
+            worksheet_path = targets.get(relationship_id)
+            if worksheet_path is None:
+                raise HTTPException(status_code=422, detail="Не найден XML первого листа XLSX")
+            worksheet_path = "xl/" + worksheet_path.lstrip("/")
+            worksheet_root = ET.fromstring(archive.read(worksheet_path))
+
+            rows: list[list[str]] = []
+            for row in worksheet_root.findall(".//m:sheetData/m:row", XLSX_NS):
+                values: list[str] = []
+                for cell in row.findall("m:c", XLSX_NS):
+                    value = cell.find("m:v", XLSX_NS)
+                    text_value = "" if value is None else value.text or ""
+                    if cell.attrib.get("t") == "s" and text_value:
+                        text_value = shared_strings[int(text_value)]
+                    elif cell.attrib.get("t") == "inlineStr":
+                        text_value = "".join(node.text or "" for node in cell.findall(".//m:t", XLSX_NS))
+                    values.append(text_value.strip())
+                rows.append(values)
+    except BadZipFile as exc:
+        raise HTTPException(status_code=422, detail="Файл не является корректным XLSX") from exc
+    except (ET.ParseError, KeyError, IndexError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Структура XLSX-файла не поддерживается") from exc
+
+    if not rows or not rows[0]:
+        raise HTTPException(status_code=422, detail="В XLSX-файле отсутствует строка заголовков")
+    headers = [header.strip() for header in rows[0]]
+    if not {"COMPUTERS.SERIAL_NUMBER", "SOFTWARE.DISPLAYNAME"}.issubset(headers) and not {"computer_id", "name"}.issubset(headers):
+        raise HTTPException(status_code=422, detail="В XLSX-файле нет обязательных колонок компьютера и названия ПО")
+
+    result: list[Installation] = []
+    for values in rows[1:]:
+        row = dict(zip(headers, values))
+        result.append(
+            Installation(
+                computer_id=row.get("computer_id") or row.get("serial_number") or row.get("COMPUTERS.SERIAL_NUMBER") or "",
+                name=row.get("name") or row.get("displayname") or row.get("SOFTWARE.DISPLAYNAME") or "",
+                publisher=row.get("publisher") or row.get("SOFTWARE.PUBLISHER") or "",
+                version=row.get("version") or row.get("SOFTWARE.VERSION") or "",
+            )
+        )
+    return result
+
+
 @app.post("/api/v1/import/installations", status_code=201, summary="Импортировать установки из файла JSON или CSV", tags=["Импорт"])
 async def import_installations(
     file: UploadFile = File(..., description="Файл .json или .csv с установками"),
@@ -305,8 +381,10 @@ async def import_installations(
             if not isinstance(parsed, list):
                 raise HTTPException(status_code=422, detail="JSON должен содержать массив установок")
             payload = [Installation.model_validate(item) for item in parsed]
-        else:
+        elif extension == "csv":
             payload = parse_csv_installations(content)
+        else:
+            payload = parse_xlsx_installations(content)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="Записи файла не соответствуют формату установок") from exc
     return import_rows(payload, db, idempotency_key)[0]
